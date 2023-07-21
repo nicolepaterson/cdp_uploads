@@ -1,0 +1,6 @@
+#!/bin/bash
+export HADOOP_HOST="flu-hadoop-04.biotech.cdc.gov"
+export HADOOP_BEELINE_PASSWORD_FILE="~/hadoop/.beeline"
+export HADOOP_IMPALA_PASSWORD_FILE="~/hadoop/.impala"
+export HADOOP_DB="default"
+export HADOOP_IS_LOCAL=0

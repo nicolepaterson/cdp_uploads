@@ -1,0 +1,74 @@
+#!/bin/bash
+# Sam Shepard - hbeeline
+# Remote beeline access. For local interactive use, try 'beewing'.
+
+hUser=$(whoami)
+if [ "$HADOOP_DB" != "" ]; then
+    hDB=$HADOOP_DB
+else
+    hDB="default"
+fi
+
+if [ "$HADOOP_HOST" != "" ]; then
+    hHost=$HADOOP_HOST
+else
+    hHost="cdp-client-01.biotech.cdc.gov"
+fi
+
+hLogin=$hUser@$hHost
+query='show tables'
+
+if [ "$#" -eq "1" ]; then
+    query=$1
+elif [ "$#" -eq "2" ]; then
+    query=$1
+    hDB=$2
+else
+    echo -e "Usage:\n\t$0 <query> [database]"
+    exit 0
+fi
+
+# Handle remote vs local execution
+SSH="ssh $hLogin"
+EXEC=$SSH
+JUMP=31
+if [ "$(hostname -s | cut -f1 -d'-')" == "cdp" ]; then
+    EXEC="eval"
+    SSH=""
+    JUMP=1
+fi
+
+CMD="beeline -u \"jdbc:hive2://cdp-01.biotech.cdc.gov:10000/${hDB};ssl=true;sslTrustStore=/groups/jks/truststore.jks;trustStorePassword=hadoop;principal=hive/_HOST@BIOTECH.CDC.GOV\" --silent=true --verbose=false --showWarnings=false --outputformat=tsv2 --fastConnect --showHeader=false"
+if [ -s "$query" ]; then
+    # Query is in a local file see, if it is on the remote host
+    filename=$(readlinkf $query)
+    if $SSH stat "$filename" > /dev/null 2>&1; then
+        CMD+=" -f '$filename'"
+    else
+        query=$(cat $query | tr \' \")
+        CMD+=" -e '$query'"
+    fi
+else
+    # Query is not a local file but could be a remote file
+    if $SSH stat "$query" > /dev/null 2>&1; then
+        filename=$query
+        CMD+=" -f '$filename'"
+    else
+        query=$(tr \' \" <<< "$query")
+        CMD+=" -e '$query'"
+    fi
+fi
+
+exec 3>&1
+OUTPUT=$($EXEC "$CMD" 2>&1 1>&3)
+STATUS=$?
+exec 3>&-
+
+if [ "$STATUS" -ne "0" ]; then
+    echo "ERROR ($STATUS): $0" 1>&2
+    echo "TRIED CMD: $SSH $CMD" 1>&2
+    echo "-----------START-LOG---------------" 1>&2
+    echo "$OUTPUT" | tail -n +$JUMP 1>&2
+    echo "-----------END-LOG-----------------" 1>&2
+    exit $STATUS
+fi

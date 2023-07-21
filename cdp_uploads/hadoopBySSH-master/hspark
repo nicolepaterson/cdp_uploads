@@ -1,0 +1,48 @@
+#!/bin/bash
+# Sam Shepard - hspark - 2020.11
+
+if [ "$HADOOP_HOST" != "" ];then
+	hHost=$HADOOP_HOST
+else
+	hHost="cdp-client-01.biotech.cdc.gov"
+fi
+
+hUser=$(whoami)
+hLogin=$hUser@$hHost
+
+if [ "$#" -ge "2" ];then
+	jar=$1
+	class=$2
+else
+	echo -e "Usage:\n\t$0 <jarpath> <class> [jar args...]"
+	exit 0
+fi
+
+# Handle remote vs local execution
+if [ "$(hostname -s|cut -f1 -d'-')" == "cdp" ];then
+	EXEC="eval"
+else
+	EXEC="ssh $hLogin"
+fi
+
+$EXEC "stat $jar" >/dev/null 2>&1
+if [ "$?" -ne "0" ];then
+	echo "$0 error: $jar not found"
+	exit 2 
+fi
+
+CMD="spark-submit --executor-memory 3G --master yarn --deploy-mode client --name $class"
+exec 3>&1
+OUTPUT=$($EXEC "$CMD --class $class $jar $3 $4 $5 $6 $7"  2>&1 1>&3)
+STATUS=$?
+exec 3>&-
+
+if [ "$STATUS" -ne "0" ];then
+	echo "ERROR ($STATUS): $0" 1>&2
+	echo "TRIED CMD: $SSH $CMD" 1>&2
+	echo "-----------START-LOG---------------" 1>&2
+	echo "$OUTPUT"|grep -v " INFO " 1>&2
+	echo "-----------END-LOG-----------------" 1>&2
+	exit $STATUS
+fi
+exit 0
